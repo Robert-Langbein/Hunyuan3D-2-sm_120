@@ -44,7 +44,7 @@ class Hunyuan3DTexGenConfig:
         subfolder_name,
         device: str = "cuda:0",
         quality: Optional[TextureQualityConfig] = None,
-        use_safetensors: bool = False,
+        use_safetensors: bool = True,
     ):
         quality = quality or get_texture_quality_config()
 
@@ -87,7 +87,7 @@ class Hunyuan3DPaintPipeline:
         texture_size: Optional[int] = None,
         render_size: Optional[int] = None,
         low_vram_mode: bool = False,
-        use_safetensors: bool = False,
+        use_safetensors: bool = True,
     ):
         original_model_path = model_path
         quality = get_texture_quality_config(
