@@ -1,9 +1,12 @@
-FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0;12.0"
+    TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0;12.0" \
+    CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/cuda/bin:${PATH} \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
 
 WORKDIR /app
 
@@ -27,8 +30,9 @@ RUN python3 -m pip install --upgrade pip setuptools wheel
 
 # PyTorch nightly with CUDA 12.4 and sm_120 support
 # Try CUDA 12.4 nightly first, then fall back to CUDA 12.3 nightly if not yet published.
-RUN python3 -m pip install --pre --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/nightly/cu124 || \
-    python3 -m pip install --pre --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/nightly/cu123
+# PyTorch nightly with CUDA 12.8 and sm_120 support (fallback to cu126 if cu128 is temporarily unavailable)
+RUN python3 -m pip install --pre --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128 || \
+    python3 -m pip install --pre --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
 
 RUN python3 -m pip install -r requirements.txt && python3 -m pip install -e .
 
