@@ -27,6 +27,7 @@ from diffusers.utils.torch_utils import randn_tensor
 from diffusers.utils.import_utils import is_accelerate_version, is_accelerate_available
 from tqdm import tqdm
 
+from hy3dgen.config import resolve_device
 from .models.autoencoders import ShapeVAE
 from .models.autoencoders import SurfaceExtractors
 from .utils import logger, synchronize_timer, smart_load_model
@@ -304,10 +305,11 @@ class Hunyuan3DDiTPipeline:
             self.model.to(dtype=dtype)
             self.conditioner.to(dtype=dtype)
         if device is not None:
-            self.device = torch.device(device)
-            self.vae.to(device)
-            self.model.to(device)
-            self.conditioner.to(device)
+            safe_device = resolve_device(device)
+            self.device = torch.device(safe_device)
+            self.vae.to(self.device)
+            self.model.to(self.device)
+            self.conditioner.to(self.device)
 
     @property
     def _execution_device(self):
@@ -355,7 +357,7 @@ class Hunyuan3DDiTPipeline:
         else:
             raise ImportError("`enable_model_cpu_offload` requires `accelerate v0.17.0` or higher.")
 
-        torch_device = torch.device(device)
+        torch_device = torch.device(resolve_device(device))
         device_index = torch_device.index
 
         if gpu_id is not None and device_index is not None:

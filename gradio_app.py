@@ -27,6 +27,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import uuid
 
+from hy3dgen.config import DeviceConfig, get_texture_quality_config
 from hy3dgen.shapegen.utils import logger
 
 MAX_SEED = int(1e7)
@@ -171,6 +172,16 @@ def _gen_shape(
         'model': {
             'shapegen': f'{args.model_path}/{args.subfolder}',
             'texgen': f'{args.texgen_model_path}',
+        },
+        'device': {
+            'shape': SHAPE_DEVICE,
+            'texture': TEXTURE_DEVICE if HAS_TEXTUREGEN else None,
+        },
+        'texture_quality': {
+            'preset': args.texture_quality,
+            'render_size': TEXTURE_QUALITY_CONFIG.render_size,
+            'texture_size': TEXTURE_QUALITY_CONFIG.texture_size,
+            'max_num_view': TEXTURE_QUALITY_CONFIG.max_num_view,
         },
         'params': {
             'caption': caption,
@@ -650,8 +661,21 @@ if __name__ == '__main__':
     parser.add_argument("--texgen_model_path", type=str, default='tencent/Hunyuan3D-2')
     parser.add_argument('--port', type=int, default=8080)
     parser.add_argument('--host', type=str, default='0.0.0.0')
-    parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--device', type=str, default='cuda:0',
+                        help='Deprecated fallback. Prefer --shape_device/--texture_device.')
+    parser.add_argument('--shape_device', type=str, default=None,
+                        help='Device for shape generation (e.g. cuda:0, cuda:1, cpu).')
+    parser.add_argument('--texture_device', type=str, default=None,
+                        help='Device for texture generation (defaults to shape_device).')
     parser.add_argument('--mc_algo', type=str, default='mc')
+    parser.add_argument('--texture_quality', type=str, default='standard',
+                        choices=['standard', 'balanced', 'low_vram', 'high'])
+    parser.add_argument('--max_num_view', type=int, default=None,
+                        help='Override number of texture render views (<=6).')
+    parser.add_argument('--texture_resolution', type=int, default=None,
+                        help='Override texture bake resolution.')
+    parser.add_argument('--render_resolution', type=int, default=None,
+                        help='Override render resolution used for view rendering.')
     parser.add_argument('--cache-path', type=str, default='gradio_cache')
     parser.add_argument('--enable_t23d', action='store_true')
     parser.add_argument('--disable_tex', action='store_true')
@@ -659,6 +683,20 @@ if __name__ == '__main__':
     parser.add_argument('--compile', action='store_true')
     parser.add_argument('--low_vram_mode', action='store_true')
     args = parser.parse_args()
+
+    device_config = DeviceConfig(
+        shape_device=args.shape_device or args.device,
+        texture_device=args.texture_device or args.device,
+    )
+    SHAPE_DEVICE = device_config.resolved_shape()
+    TEXTURE_DEVICE = device_config.resolved_texture()
+    TEXTURE_QUALITY_CONFIG = get_texture_quality_config(
+        preset=args.texture_quality,
+        max_num_view=args.max_num_view,
+        texture_size=args.texture_resolution,
+        render_size=args.render_resolution,
+        low_vram_mode=args.low_vram_mode,
+    )
 
     SAVE_DIR = args.cache_path
     os.makedirs(SAVE_DIR, exist_ok=True)
@@ -694,9 +732,17 @@ if __name__ == '__main__':
         try:
             from hy3dgen.texgen import Hunyuan3DPaintPipeline
 
-            texgen_worker = Hunyuan3DPaintPipeline.from_pretrained(args.texgen_model_path)
+            texgen_worker = Hunyuan3DPaintPipeline.from_pretrained(
+                args.texgen_model_path,
+                device=TEXTURE_DEVICE,
+                texture_quality=args.texture_quality,
+                max_num_view=args.max_num_view,
+                texture_size=args.texture_resolution,
+                render_size=args.render_resolution,
+                low_vram_mode=args.low_vram_mode,
+            )
             if args.low_vram_mode:
-                texgen_worker.enable_model_cpu_offload()
+                texgen_worker.enable_model_cpu_offload(device=TEXTURE_DEVICE)
             # Not help much, ignore for now.
             # if args.compile:
             #     texgen_worker.models['delight_model'].pipeline.unet.compile()
@@ -714,7 +760,10 @@ if __name__ == '__main__':
     if args.enable_t23d:
         from hy3dgen.text2image import HunyuanDiTPipeline
 
-        t2i_worker = HunyuanDiTPipeline('Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled', device=args.device)
+        t2i_worker = HunyuanDiTPipeline(
+            'Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled',
+            device=SHAPE_DEVICE,
+        )
         HAS_T2I = True
 
     from hy3dgen.shapegen import FaceReducer, FloaterRemover, DegenerateFaceRemover, MeshSimplifier, \
@@ -727,10 +776,10 @@ if __name__ == '__main__':
         args.model_path,
         subfolder=args.subfolder,
         use_safetensors=True,
-        device=args.device,
+        device=SHAPE_DEVICE,
     )
     if args.enable_flashvdm:
-        mc_algo = 'mc' if args.device in ['cpu', 'mps'] else args.mc_algo
+        mc_algo = 'mc' if SHAPE_DEVICE in ['cpu', 'mps'] else args.mc_algo
         i23d_worker.enable_flashvdm(mc_algo=mc_algo)
     if args.compile:
         i23d_worker.compile()

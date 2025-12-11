@@ -35,6 +35,7 @@ from PIL import Image
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 
+from hy3dgen.config import DeviceConfig, get_texture_quality_config
 from hy3dgen.rembg import BackgroundRemover
 from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline, FloaterRemover, DegenerateFaceRemover, FaceReducer, \
     MeshSimplifier
@@ -149,26 +150,59 @@ class ModelWorker:
                  tex_model_path='tencent/Hunyuan3D-2',
                  subfolder='hunyuan3d-dit-v2-mini-turbo',
                  device='cuda',
-                 enable_tex=False):
+                 shape_device=None,
+                 texture_device=None,
+                 enable_tex=False,
+                 enable_shape=True,
+                 texture_quality: str = "standard",
+                 max_num_view: int = None,
+                 texture_resolution: int = None,
+                 render_resolution: int = None,
+                 low_vram_mode: bool = False):
         self.model_path = model_path
         self.worker_id = worker_id
-        self.device = device
+        self.enable_shape = enable_shape
+
+        device_config = DeviceConfig(
+            shape_device=shape_device or device,
+            texture_device=texture_device or device,
+        )
+        self.shape_device = device_config.resolved_shape()
+        self.texture_device = device_config.resolved_texture()
+        self.tex_quality = get_texture_quality_config(
+            preset=texture_quality,
+            max_num_view=max_num_view,
+            texture_size=texture_resolution,
+            render_size=render_resolution,
+            low_vram_mode=low_vram_mode,
+        )
         logger.info(f"Loading the model {model_path} on worker {worker_id} ...")
 
         self.rembg = BackgroundRemover()
-        self.pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-            model_path,
-            subfolder=subfolder,
-            use_safetensors=True,
-            device=device,
-        )
-        self.pipeline.enable_flashvdm(mc_algo='mc')
-        # self.pipeline_t2i = HunyuanDiTPipeline(
-        #     'Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled',
-        #     device=device
-        # )
+        if self.enable_shape:
+            self.pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+                model_path,
+                subfolder=subfolder,
+                use_safetensors=True,
+                device=self.shape_device,
+            )
+            self.pipeline.enable_flashvdm(mc_algo='mc')
+            # self.pipeline_t2i = HunyuanDiTPipeline(
+            #     'Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled',
+            #     device=self.shape_device
+            # )
         if enable_tex:
-            self.pipeline_tex = Hunyuan3DPaintPipeline.from_pretrained(tex_model_path)
+            self.pipeline_tex = Hunyuan3DPaintPipeline.from_pretrained(
+                tex_model_path,
+                device=self.texture_device,
+                texture_quality=texture_quality,
+                max_num_view=max_num_view,
+                texture_size=texture_resolution,
+                render_size=render_resolution,
+                low_vram_mode=low_vram_mode,
+            )
+            if low_vram_mode:
+                self.pipeline_tex.enable_model_cpu_offload(device=self.texture_device)
 
     def get_queue_length(self):
         if model_semaphore is None:
@@ -201,8 +235,15 @@ class ModelWorker:
         if 'mesh' in params:
             mesh = trimesh.load(BytesIO(base64.b64decode(params["mesh"])), file_type='glb')
         else:
+            if not self.enable_shape:
+                raise ValueError("Shape generation disabled; please provide a mesh.")
             seed = params.get("seed", 1234)
-            params['generator'] = torch.Generator(self.device).manual_seed(seed)
+            generator_device = "cpu"
+            if self.shape_device.startswith("cuda") and torch.cuda.is_available():
+                generator_device = self.shape_device
+            elif self.shape_device == "mps":
+                generator_device = "mps"
+            params['generator'] = torch.Generator(device=generator_device).manual_seed(seed)
             params['octree_resolution'] = params.get("octree_resolution", 128)
             params['num_inference_steps'] = params.get("num_inference_steps", 5)
             params['guidance_scale'] = params.get('guidance_scale', 5.0)
@@ -216,6 +257,8 @@ class ModelWorker:
             mesh = FloaterRemover()(mesh)
             mesh = DegenerateFaceRemover()(mesh)
             mesh = FaceReducer()(mesh, max_facenum=params.get('face_count', 40000))
+            if not hasattr(self, "pipeline_tex"):
+                raise ValueError("Texture generation disabled; please enable_tex or disable `texture` flag.")
             mesh = self.pipeline_tex(mesh, image)
 
         type = params.get('type', 'glb')
@@ -225,7 +268,8 @@ class ModelWorker:
             save_path = os.path.join(SAVE_DIR, f'{str(uid)}.{type}')
             mesh.export(save_path)
 
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         return save_path, uid
 
 
@@ -303,14 +347,39 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8081)
     parser.add_argument("--model_path", type=str, default='tencent/Hunyuan3D-2mini')
     parser.add_argument("--tex_model_path", type=str, default='tencent/Hunyuan3D-2')
-    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--device", type=str, default="cuda:0",
+                        help="Deprecated fallback. Prefer --shape_device/--texture_device.")
+    parser.add_argument("--shape_device", type=str, default=None,
+                        help="Device for shape generation (e.g. cuda:0).")
+    parser.add_argument("--texture_device", type=str, default=None,
+                        help="Device for texture generation (e.g. cuda:1).")
+    parser.add_argument("--texture_quality", type=str, default="standard",
+                        choices=["standard", "balanced", "low_vram", "high"])
+    parser.add_argument("--max_num_view", type=int, default=None)
+    parser.add_argument("--texture_resolution", type=int, default=None)
+    parser.add_argument("--render_resolution", type=int, default=None)
+    parser.add_argument("--low_vram_mode", action="store_true")
     parser.add_argument("--limit-model-concurrency", type=int, default=5)
     parser.add_argument('--enable_tex', action='store_true')
+    parser.add_argument('--disable_shape', action='store_true')
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
     model_semaphore = asyncio.Semaphore(args.limit_model_concurrency)
 
-    worker = ModelWorker(model_path=args.model_path, device=args.device, enable_tex=args.enable_tex,
-                         tex_model_path=args.tex_model_path)
+    worker = ModelWorker(
+        model_path=args.model_path,
+        tex_model_path=args.tex_model_path,
+        subfolder='hunyuan3d-dit-v2-mini-turbo',
+        device=args.device,
+        shape_device=args.shape_device,
+        texture_device=args.texture_device,
+        enable_tex=args.enable_tex,
+        enable_shape=not args.disable_shape,
+        texture_quality=args.texture_quality,
+        max_num_view=args.max_num_view,
+        texture_resolution=args.texture_resolution,
+        render_resolution=args.render_resolution,
+        low_vram_mode=args.low_vram_mode,
+    )
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

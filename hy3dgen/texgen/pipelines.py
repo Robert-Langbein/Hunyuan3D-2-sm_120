@@ -20,6 +20,11 @@ import torch
 from PIL import Image
 from typing import List, Union, Optional
 
+from hy3dgen.config import (
+    TextureQualityConfig,
+    get_texture_quality_config,
+    resolve_device,
+)
 
 from .differentiable_renderer.mesh_render import MeshRender
 from .utils.dehighlight_utils import Light_Shadow_Remover
@@ -32,8 +37,17 @@ logger = logging.getLogger(__name__)
 
 class Hunyuan3DTexGenConfig:
 
-    def __init__(self, light_remover_ckpt_path, multiview_ckpt_path, subfolder_name):
-        self.device = 'cuda'
+    def __init__(
+        self,
+        light_remover_ckpt_path,
+        multiview_ckpt_path,
+        subfolder_name,
+        device: str = "cuda:0",
+        quality: Optional[TextureQualityConfig] = None,
+    ):
+        quality = quality or get_texture_quality_config()
+
+        self.device = resolve_device(device)
         self.light_remover_ckpt_path = light_remover_ckpt_path
         self.multiview_ckpt_path = multiview_ckpt_path
 
@@ -41,19 +55,45 @@ class Hunyuan3DTexGenConfig:
         self.candidate_camera_elevs = [0, 0, 0, 0, 90, -90]
         self.candidate_view_weights = [1, 0.1, 0.5, 0.1, 0.05, 0.05]
 
-        self.render_size = 2048
-        self.texture_size = 2048
+        self.max_num_view = quality.max_num_view
+        self.render_size = quality.render_size
+        self.texture_size = quality.texture_size
+        self.low_vram_mode = quality.low_vram_mode
+        self._limit_views(self.max_num_view)
         self.bake_exp = 4
         self.merge_method = 'fast'
 
         self.pipe_dict = {'hunyuan3d-paint-v2-0': 'hunyuanpaint', 'hunyuan3d-paint-v2-0-turbo': 'hunyuanpaint-turbo'}
         self.pipe_name = self.pipe_dict[subfolder_name]
 
+    def _limit_views(self, max_num_view: int):
+        limit = max(1, min(max_num_view, len(self.candidate_camera_azims)))
+        self.candidate_camera_azims = self.candidate_camera_azims[:limit]
+        self.candidate_camera_elevs = self.candidate_camera_elevs[:limit]
+        self.candidate_view_weights = self.candidate_view_weights[:limit]
+
 
 class Hunyuan3DPaintPipeline:
     @classmethod
-    def from_pretrained(cls, model_path, subfolder='hunyuan3d-paint-v2-0-turbo'):
+    def from_pretrained(
+        cls,
+        model_path,
+        subfolder: str = 'hunyuan3d-paint-v2-0-turbo',
+        device: str = "cuda:0",
+        texture_quality: str = "standard",
+        max_num_view: Optional[int] = None,
+        texture_size: Optional[int] = None,
+        render_size: Optional[int] = None,
+        low_vram_mode: bool = False,
+    ):
         original_model_path = model_path
+        quality = get_texture_quality_config(
+            preset=texture_quality,
+            max_num_view=max_num_view,
+            texture_size=texture_size,
+            render_size=render_size,
+            low_vram_mode=low_vram_mode,
+        )
         if not os.path.exists(model_path):
             # try local path
             base_dir = os.environ.get('HY3DGEN_MODELS', '~/.cache/hy3dgen')
@@ -74,38 +114,65 @@ class Hunyuan3DPaintPipeline:
                     )
                     delight_model_path = os.path.join(model_path, 'hunyuan3d-delight-v2-0')
                     multiview_model_path = os.path.join(model_path, subfolder)
-                    return cls(Hunyuan3DTexGenConfig(delight_model_path, multiview_model_path, subfolder))
+                    return cls(
+                        Hunyuan3DTexGenConfig(
+                            delight_model_path,
+                            multiview_model_path,
+                            subfolder,
+                            device=device,
+                            quality=quality,
+                        )
+                    )
                 except Exception:
                     import traceback
                     traceback.print_exc()
                     raise RuntimeError(f"Something wrong while loading {model_path}")
             else:
-                return cls(Hunyuan3DTexGenConfig(delight_model_path, multiview_model_path, subfolder))
+                return cls(
+                    Hunyuan3DTexGenConfig(
+                        delight_model_path,
+                        multiview_model_path,
+                        subfolder,
+                        device=device,
+                        quality=quality,
+                    )
+                )
         else:
             delight_model_path = os.path.join(model_path, 'hunyuan3d-delight-v2-0')
             multiview_model_path = os.path.join(model_path, subfolder)
-            return cls(Hunyuan3DTexGenConfig(delight_model_path, multiview_model_path, subfolder))
+            return cls(
+                Hunyuan3DTexGenConfig(
+                    delight_model_path,
+                    multiview_model_path,
+                    subfolder,
+                    device=device,
+                    quality=quality,
+                )
+            )
             
     def __init__(self, config):
         self.config = config
         self.models = {}
         self.render = MeshRender(
             default_resolution=self.config.render_size,
-            texture_size=self.config.texture_size)
+            texture_size=self.config.texture_size,
+            device=self.config.device)
+        self.device = self.config.device
 
         self.load_models()
 
     def load_models(self):
-        # empty cude cache
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         # Load model
         self.models['delight_model'] = Light_Shadow_Remover(self.config)
         self.models['multiview_model'] = Multiview_Diffusion_Net(self.config)
         # self.models['super_model'] = Image_Super_Net(self.config)
 
     def enable_model_cpu_offload(self, gpu_id: Optional[int] = None, device: Union[torch.device, str] = "cuda"):
-        self.models['delight_model'].pipeline.enable_model_cpu_offload(gpu_id=gpu_id, device=device)
-        self.models['multiview_model'].pipeline.enable_model_cpu_offload(gpu_id=gpu_id, device=device)
+        target_device = resolve_device(device)
+        self.models['delight_model'].pipeline.enable_model_cpu_offload(gpu_id=gpu_id, device=target_device)
+        self.models['multiview_model'].pipeline.enable_model_cpu_offload(gpu_id=gpu_id, device=target_device)
 
     def render_normal_multiview(self, camera_elevs, camera_azims, use_abs_coor=True):
         normal_maps = []

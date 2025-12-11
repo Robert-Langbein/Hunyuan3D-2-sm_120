@@ -246,6 +246,31 @@ python3 gradio_app.py --model_path tencent/Hunyuan3D-2mv --subfolder hunyuan3d-d
 python3 gradio_app.py --model_path tencent/Hunyuan3D-2 --subfolder hunyuan3d-dit-v2-0-turbo --texgen_model_path tencent/Hunyuan3D-2 --low_vram_mode --enable_flashvdm
 ```
 
+## RTX 50 + Dual-GPU Quickstart
+
+- VRAM targets: ~6 GB for shape; ~16 GB for shape+texture at default quality.
+- Install Torch with sm_120 support:
+  ```bash
+  pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu124
+  pip install -r requirements.txt
+  pip install -e .
+  TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0;12.0" python3 hy3dgen/texgen/custom_rasterizer/setup.py install
+  TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0;12.0" python3 hy3dgen/texgen/differentiable_renderer/setup.py install
+  ```
+- Shape UI on GPU 0 (shape only):  
+  `python3 gradio_app.py --disable_tex --shape_device cuda:0 --cache-path output`
+- Texture UI on GPU 1 (texture only):  
+  `python3 texture_gradio_app.py --texture_device cuda:1 --texture_quality balanced --cache-path output_textured`
+- Combined shape + texture (separate devices):  
+  `python3 gradio_app.py --shape_device cuda:0 --texture_device cuda:1 --texture_quality standard --max_num_view 6 --texture_resolution 2048`
+- Texture-only CLI for existing mesh:  
+  `python3 examples/texture_only.py --mesh_path output/white_mesh.glb --reference_image assets/demo.png --texture_device cuda:1`
+- API server with dual devices:  
+  `python3 api_server.py --enable_tex --shape_device cuda:0 --texture_device cuda:1 --texture_quality balanced`
+- Quality controls: `--texture_quality {standard,balanced,low_vram,high}` plus `--max_num_view`, `--texture_resolution`, `--render_resolution` are available in `gradio_app.py`, `texture_gradio_app.py`, and `api_server.py`.
+- Low VRAM preset (single smaller GPU): use `--texture_quality low_vram --low_vram_mode` (3 views, ~768 res); CPU fallback is applied automatically when CUDA is unavailable.
+- Docker (sm_120-ready): build with `docker build -t hunyuan3d:sm120 .`; see `docker-compose.example.yml` for dual-GPU (set `NVIDIA_VISIBLE_DEVICES`/`device_ids` to your GPU UUIDs). Single GPU: point both services to the same device or run only one service.
+
 ### API Server
 
 You could launch an API server locally, which you could post web request for Image/Text to 3D, Texturing existing mesh,
