@@ -16,10 +16,13 @@ services:
       - /data/output
     environment:
       - NVIDIA_VISIBLE_DEVICES=GPU-57d2a2a2-c2f7-0ef7-af66-69352185b370 # YOUR 1st GPU UUID
-      - HF_HOME=/data/cache/hf
+      - HF_HOME=/root/.cache/huggingface
+      - HY3DGEN_MODELS=/root/.cache/hy3dgen
     volumes:
       - ./output:/data/output
-      - ./cache:/data/cache
+      # persist HuggingFace + hy3dgen caches to avoid erneute 100GB-Downloads
+      - ./cache/hf:/root/.cache/huggingface
+      - ./cache/hy3d:/root/.cache/hy3dgen
     ports:
       - "8088:8080"
     deploy:
@@ -50,11 +53,14 @@ services:
       - /data/output_textured
     environment:
       - NVIDIA_VISIBLE_DEVICES=GPU-14c38418-9d0f-55fb-78ed-68e87703da1e # YOUR 2nd GPU UUID
-      - HF_HOME=/data/cache/hf
+      - HF_HOME=/root/.cache/huggingface
+      - HY3DGEN_MODELS=/root/.cache/hy3dgen
     volumes:
       - ./output:/data/output
       - ./output_textured:/data/output_textured
-      - ./cache:/data/cache
+      # geteilte Modell- und HF-Caches mit shape-ui
+      - ./cache/hf:/root/.cache/huggingface
+      - ./cache/hy3d:/root/.cache/hy3dgen
     ports:
       - "8089:8081"
     deploy:
