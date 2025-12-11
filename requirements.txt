@@ -1,12 +1,12 @@
 ninja
 pybind11
 
-diffusers
+diffusers==0.29.2
 einops
 opencv-python
 numpy
 torch
-transformers[sentencepiece]
+transformers[sentencepiece]==4.39.3
 tokenizers
 torchvision
 #taming-transformers-rom1504
