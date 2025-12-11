@@ -29,7 +29,7 @@ class Light_Shadow_Remover():
             config.light_remover_ckpt_path,
             torch_dtype=torch.float16,
             safety_checker=None,
-            use_safetensors=config.use_safetensors,
+            use_safetensors=False,
             local_files_only=False,
         )
         pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(pipeline.scheduler.config)

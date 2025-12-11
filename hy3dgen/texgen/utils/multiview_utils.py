@@ -35,7 +35,7 @@ class Multiview_Diffusion_Net():
             multiview_ckpt_path,
             custom_pipeline=custom_pipeline_path,
             torch_dtype=torch.float16,
-            use_safetensors=config.use_safetensors,
+            use_safetensors=False,
             local_files_only=False,
         )
 

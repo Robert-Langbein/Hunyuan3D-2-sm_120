@@ -192,9 +192,9 @@ class ModelWorker:
             #     device=self.shape_device
             # )
         if enable_tex:
-            # Für Remote-Texturierung im Texture-Container nutzen wir bewusst
-            # das stabile Paint-Modell (nicht Turbo), da dessen Checkpoints
-            # vollständig als safetensors vorliegen.
+            # Remote-Texturierung im Texture-Container: nutze stabiles Paint-Modell,
+            # lade jedoch Binär-Gewichte (pytorch_model.bin) statt safetensors,
+            # da der Text-Encoder nur als .bin vorliegt.
             self.pipeline_tex = Hunyuan3DPaintPipeline.from_pretrained(
                 tex_model_path,
                 subfolder="hunyuan3d-paint-v2-0",
@@ -204,7 +204,7 @@ class ModelWorker:
                 texture_size=texture_resolution,
                 render_size=render_resolution,
                 low_vram_mode=low_vram_mode,
-                use_safetensors=True,
+                use_safetensors=False,
             )
             if low_vram_mode:
                 self.pipeline_tex.enable_model_cpu_offload(device=self.texture_device)

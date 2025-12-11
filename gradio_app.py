@@ -789,13 +789,14 @@ if __name__ == '__main__':
 
                 texgen_worker = Hunyuan3DPaintPipeline.from_pretrained(
                     args.texgen_model_path,
+                    subfolder=args.texgen_model_path.split("/")[-1] if "paint" in args.texgen_model_path else 'hunyuan3d-paint-v2-0-turbo',
                     device=TEXTURE_DEVICE,
                     texture_quality=args.texture_quality,
                     max_num_view=args.max_num_view,
                     texture_size=args.texture_resolution,
                     render_size=args.render_resolution,
                     low_vram_mode=args.low_vram_mode,
-                    use_safetensors=True,
+                    use_safetensors=False,
                 )
                 if args.low_vram_mode:
                     texgen_worker.enable_model_cpu_offload(device=TEXTURE_DEVICE)
