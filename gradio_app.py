@@ -26,6 +26,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import uuid
+import tempfile
 
 from hy3dgen.config import DeviceConfig, get_texture_quality_config
 from hy3dgen.shapegen.utils import logger

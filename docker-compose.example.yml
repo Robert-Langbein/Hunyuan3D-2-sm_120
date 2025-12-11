@@ -8,8 +8,6 @@ services:
       - 0.0.0.0
       - --port
       - "8080"
-      - --disable_tex
-      - --enable_t23d
       - --texture_api_url
       - http://texture-ui:8081/generate
       - --shape_device
@@ -17,7 +15,7 @@ services:
       - --cache-path
       - /data/output
     environment:
-      - NVIDIA_VISIBLE_DEVICES=GPU-57d2a2a2-c2f7-0ef7-af66-69352185b370
+      - NVIDIA_VISIBLE_DEVICES=GPU-57d2a2a2-c2f7-0ef7-af66-69352185b370 # YOUR 1st GPU UUID
       - HF_HOME=/data/cache/hf
     volumes:
       - ./output:/data/output
@@ -30,7 +28,7 @@ services:
           devices:
             - driver: nvidia
               device_ids:
-                - "GPU-57d2a2a2-c2f7-0ef7-af66-69352185b370"
+                - "GPU-57d2a2a2-c2f7-0ef7-af66-69352185b370" # YOUR 1st GPU UUID
               capabilities: [gpu]
 
   texture-ui:
@@ -51,7 +49,7 @@ services:
       - --cache-path
       - /data/output_textured
     environment:
-      - NVIDIA_VISIBLE_DEVICES=GPU-14c38418-9d0f-55fb-78ed-68e87703da1e
+      - NVIDIA_VISIBLE_DEVICES=GPU-14c38418-9d0f-55fb-78ed-68e87703da1e # YOUR 2nd GPU UUID
       - HF_HOME=/data/cache/hf
     volumes:
       - ./output:/data/output
@@ -65,5 +63,5 @@ services:
           devices:
             - driver: nvidia
               device_ids:
-                - "GPU-14c38418-9d0f-55fb-78ed-68e87703da1e"
+                - "GPU-14c38418-9d0f-55fb-78ed-68e87703da1e" # YOUR 2nd GPU UUID
               capabilities: [gpu]
