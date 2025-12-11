@@ -60,9 +60,17 @@ def remove_floater(mesh: pymeshlab.MeshSet):
 
 
 def pymeshlab2trimesh(mesh: pymeshlab.MeshSet):
-    with tempfile.NamedTemporaryFile(suffix='.ply', delete=False) as temp_file:
-        mesh.save_current_mesh(temp_file.name)
-        mesh = trimesh.load(temp_file.name)
+    # Prefer OBJ for broad plugin availability; fallback to PLY
+    tmp_obj = tempfile.NamedTemporaryFile(suffix='.obj', delete=False)
+    tmp_obj.close()
+    try:
+        mesh.save_current_mesh(tmp_obj.name)
+        mesh_out = trimesh.load(tmp_obj.name, process=False)
+    except Exception:
+        with tempfile.NamedTemporaryFile(suffix='.ply', delete=False) as tmp_ply:
+            mesh.save_current_mesh(tmp_ply.name)
+            mesh_out = trimesh.load(tmp_ply.name, process=False)
+    mesh = mesh_out
     # 检查加载的对象类型
     if isinstance(mesh, trimesh.Scene):
         combined_mesh = trimesh.Trimesh()
@@ -74,18 +82,26 @@ def pymeshlab2trimesh(mesh: pymeshlab.MeshSet):
 
 
 def trimesh2pymeshlab(mesh: trimesh.Trimesh):
-    with tempfile.NamedTemporaryFile(suffix='.ply', delete=False) as temp_file:
-        if isinstance(mesh, trimesh.scene.Scene):
-            for idx, obj in enumerate(mesh.geometry.values()):
-                if idx == 0:
-                    temp_mesh = obj
-                else:
-                    temp_mesh = temp_mesh + obj
-            mesh = temp_mesh
-        mesh.export(temp_file.name)
-        mesh = pymeshlab.MeshSet()
-        mesh.load_new_mesh(temp_file.name)
-    return mesh
+    # Flatten Scene to single mesh if needed
+    if isinstance(mesh, trimesh.scene.Scene):
+        temp_mesh = None
+        for obj in mesh.geometry.values():
+            temp_mesh = obj if temp_mesh is None else (temp_mesh + obj)
+        mesh = temp_mesh
+    # Try OBJ first, fallback to PLY
+    tmp_obj = tempfile.NamedTemporaryFile(suffix='.obj', delete=False)
+    tmp_obj.close()
+    try:
+        mesh.export(tmp_obj.name)
+        ms = pymeshlab.MeshSet()
+        ms.load_new_mesh(tmp_obj.name)
+        return ms
+    except Exception:
+        with tempfile.NamedTemporaryFile(suffix='.ply', delete=False) as tmp_ply:
+            mesh.export(tmp_ply.name)
+            ms = pymeshlab.MeshSet()
+            ms.load_new_mesh(tmp_ply.name)
+            return ms
 
 
 def export_mesh(input, output):
@@ -147,11 +163,20 @@ class DegenerateFaceRemover:
         mesh: Union[pymeshlab.MeshSet, trimesh.Trimesh, Latent2MeshOutput, str],
     ) -> Union[pymeshlab.MeshSet, trimesh.Trimesh, Latent2MeshOutput]:
         ms = import_mesh(mesh)
-
-        with tempfile.NamedTemporaryFile(suffix='.ply', delete=False) as temp_file:
-            ms.save_current_mesh(temp_file.name)
-            ms = pymeshlab.MeshSet()
-            ms.load_new_mesh(temp_file.name)
+        # Re-serialize through OBJ to ensure valid topology plugins
+        tmp_obj = tempfile.NamedTemporaryFile(suffix='.obj', delete=False)
+        tmp_obj.close()
+        try:
+            ms.save_current_mesh(tmp_obj.name)
+            ms2 = pymeshlab.MeshSet()
+            ms2.load_new_mesh(tmp_obj.name)
+            ms = ms2
+        except Exception:
+            with tempfile.NamedTemporaryFile(suffix='.ply', delete=False) as tmp_ply:
+                ms.save_current_mesh(tmp_ply.name)
+                ms2 = pymeshlab.MeshSet()
+                ms2.load_new_mesh(tmp_ply.name)
+                ms = ms2
 
         mesh = export_mesh(mesh, ms)
         return mesh

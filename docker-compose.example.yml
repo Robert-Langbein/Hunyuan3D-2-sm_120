@@ -9,6 +9,9 @@ services:
       - --port
       - "8080"
       - --disable_tex
+      - --enable_t23d
+      - --texture_api_url
+      - http://texture-ui:8081/generate
       - --shape_device
       - cuda:0
       - --cache-path
@@ -34,19 +37,19 @@ services:
     build: .
     command:
       - python3
-      - texture_gradio_app.py
+      - api_server.py
       - --host
       - 0.0.0.0
       - --port
       - "8081"
-      - --texgen_model_path
-      - tencent/Hunyuan3D-2
       - --texture_device
       - cuda:1
+      - --enable_tex
+      - --disable_shape
+      - --tex_model_path
+      - tencent/Hunyuan3D-2
       - --cache-path
       - /data/output_textured
-      - --texture_quality
-      - standard
     environment:
       - NVIDIA_VISIBLE_DEVICES=GPU-14c38418-9d0f-55fb-78ed-68e87703da1e
       - HF_HOME=/data/cache/hf

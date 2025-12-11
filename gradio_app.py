@@ -510,7 +510,7 @@ def build_app():
 
         gr.HTML(f"""
         <div align="center">
-        Activated Model - Shape Generation ({args.model_path}/{args.subfolder}) ; Texture Generation ({'Hunyuan3D-2' if HAS_TEXTUREGEN else 'Unavailable'})
+        Activated Model - Shape Generation ({args.model_path}/{args.subfolder}) ; Texture Generation ({'Remote' if REMOTE_TEXTURE else ('Hunyuan3D-2' if HAS_TEXTUREGEN else 'Unavailable')})
         </div>
         """)
         if not HAS_TEXTUREGEN:
@@ -670,6 +670,9 @@ if __name__ == '__main__':
     parser.add_argument('--mc_algo', type=str, default='mc')
     parser.add_argument('--texture_quality', type=str, default='standard',
                         choices=['standard', 'balanced', 'low_vram', 'high'])
+    parser.add_argument('--texture_api_url', type=str, default=None,
+                        help='Remote texture service URL (e.g. http://texture-ui:8081/generate). When set, Shape UI '
+                             'will call remote API for texture generation and not load local texgen models.')
     parser.add_argument('--max_num_view', type=int, default=None,
                         help='Override number of texture render views (<=6).')
     parser.add_argument('--texture_resolution', type=int, default=None,
@@ -728,33 +731,78 @@ if __name__ == '__main__':
     SUPPORTED_FORMATS = ['glb', 'obj', 'ply', 'stl']
 
     HAS_TEXTUREGEN = False
+    REMOTE_TEXTURE = False
     if not args.disable_tex:
-        try:
-            from hy3dgen.texgen import Hunyuan3DPaintPipeline
+        if args.texture_api_url:
+            import base64
+            import json
+            import urllib.request
+            import urllib.error
+            from io import BytesIO
 
-            texgen_worker = Hunyuan3DPaintPipeline.from_pretrained(
-                args.texgen_model_path,
-                device=TEXTURE_DEVICE,
-                texture_quality=args.texture_quality,
-                max_num_view=args.max_num_view,
-                texture_size=args.texture_resolution,
-                render_size=args.render_resolution,
-                low_vram_mode=args.low_vram_mode,
-            )
-            if args.low_vram_mode:
-                texgen_worker.enable_model_cpu_offload(device=TEXTURE_DEVICE)
-            # Not help much, ignore for now.
-            # if args.compile:
-            #     texgen_worker.models['delight_model'].pipeline.unet.compile()
-            #     texgen_worker.models['delight_model'].pipeline.vae.compile()
-            #     texgen_worker.models['multiview_model'].pipeline.unet.compile()
-            #     texgen_worker.models['multiview_model'].pipeline.vae.compile()
+            def _encode_image_pil_to_base64_png(img):
+                buf = BytesIO()
+                img.save(buf, format="PNG")
+                return base64.b64encode(buf.getvalue()).decode()
+
+            def _encode_mesh_to_base64_glb(mesh_obj):
+                with tempfile.NamedTemporaryFile(suffix='.glb', delete=False) as tmp:
+                    mesh_obj.export(tmp.name)
+                    data = open(tmp.name, 'rb').read()
+                return base64.b64encode(data).decode()
+
+            def remote_texgen_worker(mesh_obj, image_obj):
+                image_b64 = _encode_image_pil_to_base64_png(image_obj if not isinstance(image_obj, list) else image_obj[0])
+                mesh_b64 = _encode_mesh_to_base64_glb(mesh_obj)
+                payload = json.dumps({
+                    "image": image_b64,
+                    "mesh": mesh_b64,
+                    "texture": True,
+                    "type": "glb"
+                }).encode()
+                req = urllib.request.Request(
+                    args.texture_api_url,
+                    data=payload,
+                    headers={'Content-Type': 'application/json'},
+                    method='POST'
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=600) as resp:
+                        content = resp.read()
+                except urllib.error.HTTPError as e:
+                    raise RuntimeError(f"Remote texture API error: {e.read().decode()}") from e
+                except Exception as e:
+                    raise RuntimeError(f"Remote texture API failed: {str(e)}") from e
+                with tempfile.NamedTemporaryFile(suffix='.glb', delete=False) as tmp_in:
+                    tmp_in.write(content)
+                    tmp_in.flush()
+                    textured = trimesh.load(tmp_in.name)
+                return textured
+
+            texgen_worker = remote_texgen_worker
             HAS_TEXTUREGEN = True
-        except Exception as e:
-            print(e)
-            print("Failed to load texture generator.")
-            print('Please try to install requirements by following README.md')
-            HAS_TEXTUREGEN = False
+            REMOTE_TEXTURE = True
+        else:
+            try:
+                from hy3dgen.texgen import Hunyuan3DPaintPipeline
+
+                texgen_worker = Hunyuan3DPaintPipeline.from_pretrained(
+                    args.texgen_model_path,
+                    device=TEXTURE_DEVICE,
+                    texture_quality=args.texture_quality,
+                    max_num_view=args.max_num_view,
+                    texture_size=args.texture_resolution,
+                    render_size=args.render_resolution,
+                    low_vram_mode=args.low_vram_mode,
+                )
+                if args.low_vram_mode:
+                    texgen_worker.enable_model_cpu_offload(device=TEXTURE_DEVICE)
+                HAS_TEXTUREGEN = True
+            except Exception as e:
+                print(e)
+                print("Failed to load texture generator.")
+                print('Please try to install requirements by following README.md')
+                HAS_TEXTUREGEN = False
 
     HAS_T2I = True
     if args.enable_t23d:

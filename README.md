@@ -271,6 +271,20 @@ python3 gradio_app.py --model_path tencent/Hunyuan3D-2 --subfolder hunyuan3d-dit
 - Low VRAM preset (single smaller GPU): use `--texture_quality low_vram --low_vram_mode` (3 views, ~768 res); CPU fallback is applied automatically when CUDA is unavailable.
 - Docker (sm_120-ready): build with `docker build -t hunyuan3d:sm120 .`; see `docker-compose.example.yml` for dual-GPU (set `NVIDIA_VISIBLE_DEVICES`/`device_ids` to your GPU UUIDs). Single GPU: point both services to the same device or run only one service.
 
+### Remote Texture Mode (single UI, dual GPUs)
+
+- Run shape UI on GPU 0 and texture API on GPU 1, while using a single web UI:
+  - shape-ui (container): calls remote texture API
+  - texture-ui (container): texture-only API server
+- Example compose wiring is provided in `docker-compose.example.yml`. Key flags:
+  - Shape UI: `--disable_tex --texture_api_url http://texture-ui:8081/generate --shape_device cuda:0`
+  - Texture API: `api_server.py --enable_tex --disable_shape --texture_device cuda:1`
+- In the Shape UI, banner shows “Texture Generation (Remote)” when remote mode is active.
+
+### Export fix in containers
+
+If you see PyMeshLab errors like “Unknown format for load: ply”, the code now prefers OBJ for intermediate IO and falls back to PLY automatically. This is handled internally; no action required.
+
 ### API Server
 
 You could launch an API server locally, which you could post web request for Image/Text to 3D, Texturing existing mesh,
