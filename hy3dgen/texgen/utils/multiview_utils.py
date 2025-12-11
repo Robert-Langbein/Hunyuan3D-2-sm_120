@@ -92,13 +92,79 @@ class Multiview_Diffusion_Net():
             multiview_ckpt_path,
         )
 
-        pipeline = DiffusionPipeline.from_pretrained(
-            multiview_ckpt_path,
-            custom_pipeline=custom_pipeline_path,
-            torch_dtype=torch.float16,
-            use_safetensors=False,
-            local_files_only=False,
-        )
+        # Erster Ladeversuch – falls dabei der bekannte `dim`-Fehler in
+        # Basic2p5DTransformerBlock auftritt, patchen wir das HF-Modul danach
+        # und versuchen es ein zweites Mal.
+        try:
+            pipeline = DiffusionPipeline.from_pretrained(
+                multiview_ckpt_path,
+                custom_pipeline=custom_pipeline_path,
+                torch_dtype=torch.float16,
+                use_safetensors=False,
+                local_files_only=False,
+            )
+        except Exception as exc:
+            logger.exception(
+                "Erster Versuch zum Laden der Multiview-Pipeline fehlgeschlagen: %s. "
+                "Versuche, HF Basic2p5DTransformerBlock zu patchen und erneut zu laden.",
+                exc,
+            )
+
+            try:
+                hf_modules = importlib.import_module("diffusers_modules.local.modules")
+                Basic2p5D = getattr(hf_modules, "Basic2p5DTransformerBlock", None)
+
+                if Basic2p5D is not None and not getattr(Basic2p5D, "_dim_patched", False):
+                    logger.info(
+                        "Patching HF Basic2p5DTransformerBlock.__getattr__ für dyn. 'dim'-Berechnung (Retry-Pfad)."
+                    )
+                    original_getattr = Basic2p5D.__getattr__
+
+                    def _patched_getattr(self, name: str):
+                        if name == "dim":
+                            attn1 = getattr(self, "attn1", getattr(self, "transformer", None))
+                            num_heads = getattr(self, "num_attention_heads", getattr(attn1, "heads", 8))
+                            q_proj = getattr(attn1, "to_q", None)
+                            if q_proj is not None and hasattr(q_proj, "in_features"):
+                                dim = q_proj.in_features
+                            else:
+                                head_dim = getattr(attn1, "head_dim", None)
+                                if head_dim is not None:
+                                    dim = num_heads * head_dim
+                                else:
+                                    dim = 1024
+                            # einmalig cachen, um Wiederholungen zu vermeiden
+                            try:
+                                object.__setattr__(self, "dim", dim)
+                            except Exception:
+                                pass
+                            return dim
+
+                        try:
+                            return original_getattr(self, name)
+                        except AttributeError:
+                            return getattr(self.transformer, name)
+
+                    Basic2p5D.__getattr__ = _patched_getattr
+                    setattr(Basic2p5D, "_dim_patched", True)
+                else:
+                    logger.warning(
+                        "HF Basic2p5DTransformerBlock nicht gefunden oder bereits gepatcht – "
+                        "kann 'dim'-Patch nicht anwenden."
+                    )
+            except Exception as patch_exc:
+                logger.exception("Patch von HF Basic2p5DTransformerBlock ist fehlgeschlagen: %s", patch_exc)
+                # ursprüngliche Exception weiterreichen
+                raise
+
+            logger.info("Starte zweiten Ladeversuch der Multiview-Pipeline nach HF-Patch...")
+            pipeline = DiffusionPipeline.from_pretrained(
+                multiview_ckpt_path,
+                custom_pipeline=custom_pipeline_path,
+                torch_dtype=torch.float16,
+                use_safetensors=False,
+                local_files_only=False,
+            )
 
         if config.pipe_name in ['hunyuanpaint']:
             pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(pipeline.scheduler.config,
