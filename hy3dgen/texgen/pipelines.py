@@ -44,12 +44,14 @@ class Hunyuan3DTexGenConfig:
         subfolder_name,
         device: str = "cuda:0",
         quality: Optional[TextureQualityConfig] = None,
+        use_safetensors: bool = True,
     ):
         quality = quality or get_texture_quality_config()
 
         self.device = resolve_device(device)
         self.light_remover_ckpt_path = light_remover_ckpt_path
         self.multiview_ckpt_path = multiview_ckpt_path
+        self.use_safetensors = use_safetensors
 
         self.candidate_camera_azims = [0, 90, 180, 270, 0, 180]
         self.candidate_camera_elevs = [0, 0, 0, 0, 90, -90]
@@ -85,7 +87,7 @@ class Hunyuan3DPaintPipeline:
         texture_size: Optional[int] = None,
         render_size: Optional[int] = None,
         low_vram_mode: bool = False,
-        use_safetensors: bool = True,
+        use_safetensors: bool = False,
     ):
         original_model_path = model_path
         quality = get_texture_quality_config(
@@ -122,6 +124,7 @@ class Hunyuan3DPaintPipeline:
                             subfolder,
                             device=device,
                             quality=quality,
+                        use_safetensors=use_safetensors,
                         )
                     )
                 except Exception:
@@ -136,6 +139,7 @@ class Hunyuan3DPaintPipeline:
                         subfolder,
                         device=device,
                         quality=quality,
+                        use_safetensors=use_safetensors,
                     )
                 )
         else:
@@ -148,6 +152,7 @@ class Hunyuan3DPaintPipeline:
                     subfolder,
                     device=device,
                     quality=quality,
+                        use_safetensors=use_safetensors,
                 )
             )
             
