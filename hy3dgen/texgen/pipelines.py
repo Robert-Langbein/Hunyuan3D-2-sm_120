@@ -87,7 +87,7 @@ class Hunyuan3DPaintPipeline:
         texture_size: Optional[int] = None,
         render_size: Optional[int] = None,
         low_vram_mode: bool = False,
-        use_safetensors: bool = False,
+        use_safetensors: bool = True,
     ):
         original_model_path = model_path
         quality = get_texture_quality_config(
