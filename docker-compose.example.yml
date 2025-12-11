@@ -23,7 +23,7 @@ services:
       - ./output:/data/output
       - ./cache:/data/cache
     ports:
-      - "8080:8080"
+      - "8088:8080"
     deploy:
       resources:
         reservations:
@@ -58,7 +58,7 @@ services:
       - ./output_textured:/data/output_textured
       - ./cache:/data/cache
     ports:
-      - "8081:8081"
+      - "8089:8081"
     deploy:
       resources:
         reservations:

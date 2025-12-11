@@ -362,10 +362,16 @@ if __name__ == "__main__":
     parser.add_argument("--limit-model-concurrency", type=int, default=5)
     parser.add_argument('--enable_tex', action='store_true')
     parser.add_argument('--disable_shape', action='store_true')
+    parser.add_argument("--cache-path", type=str, default="gradio_cache",
+                        help="Directory for temporary outputs returned by API.")
     args = parser.parse_args()
     logger.info(f"args: {args}")
 
     model_semaphore = asyncio.Semaphore(args.limit_model_concurrency)
+
+    # Update SAVE_DIR based on provided cache-path
+    SAVE_DIR = args.cache_path
+    os.makedirs(SAVE_DIR, exist_ok=True)
 
     worker = ModelWorker(
         model_path=args.model_path,

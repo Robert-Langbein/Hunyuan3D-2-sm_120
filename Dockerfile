@@ -17,6 +17,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     build-essential \
     git \
+    libopengl0 \
+    libglvnd0 \
+    libegl1 \
     libgl1 \
     libglib2.0-0 \
     libxrender1 \
