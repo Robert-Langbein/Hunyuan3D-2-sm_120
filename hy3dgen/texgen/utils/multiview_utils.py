@@ -14,6 +14,7 @@
 
 import os
 import random
+import importlib
 
 import numpy as np
 import torch
@@ -30,6 +31,17 @@ class Multiview_Diffusion_Net():
 
         current_file_path = os.path.abspath(__file__)
         custom_pipeline_path = os.path.join(os.path.dirname(current_file_path), '..', 'hunyuanpaint')
+
+        # Sicherstellen, dass die Hunyuan-spezifische Basic2p5DTransformerBlock-Implementierung
+        # auch in den von Diffusers gecachten Modulen verwendet wird.
+        try:
+            hf_modules = importlib.import_module("diffusers_modules.local.modules")
+            from hy3dgen.texgen.hunyuanpaint.unet.modules import Basic2p5DTransformerBlock as LocalBasic2p5D
+            hf_modules.Basic2p5DTransformerBlock = LocalBasic2p5D
+        except ImportError:
+            # Beim ersten Start sind die Module evtl. noch nicht vorhanden;
+            # in diesem Fall verlässt sich Diffusers auf die lokale Implementation.
+            pass
 
         pipeline = DiffusionPipeline.from_pretrained(
             multiview_ckpt_path,
