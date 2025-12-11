@@ -192,8 +192,12 @@ class ModelWorker:
             #     device=self.shape_device
             # )
         if enable_tex:
+            # Für Remote-Texturierung im Texture-Container nutzen wir bewusst
+            # das stabile Paint-Modell (nicht Turbo), da dessen Checkpoints
+            # vollständig als safetensors vorliegen.
             self.pipeline_tex = Hunyuan3DPaintPipeline.from_pretrained(
                 tex_model_path,
+                subfolder="hunyuan3d-paint-v2-0",
                 device=self.texture_device,
                 texture_quality=texture_quality,
                 max_num_view=max_num_view,
