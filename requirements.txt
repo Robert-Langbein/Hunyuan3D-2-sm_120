@@ -6,14 +6,15 @@ einops
 opencv-python
 numpy
 torch
-transformers
+transformers[sentencepiece]
+tokenizers
 torchvision
 #taming-transformers-rom1504
 #ConfigArgParse
 #ipdb
 omegaconf
 
-#sentencepiece
+sentencepiece
 tqdm
 
 # Mesh Processing
