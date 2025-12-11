@@ -156,7 +156,7 @@ if __name__ == "__main__":
         texture_size=args.texture_resolution,
         render_size=args.render_resolution,
         low_vram_mode=args.low_vram_mode,
-        use_safetensors=True,
+        use_safetensors=False,
     )
     if args.low_vram_mode:
         texgen_worker.enable_model_cpu_offload(device=TEXTURE_DEVICE)

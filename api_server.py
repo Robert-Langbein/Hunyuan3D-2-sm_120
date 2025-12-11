@@ -200,7 +200,7 @@ class ModelWorker:
                 texture_size=texture_resolution,
                 render_size=render_resolution,
                 low_vram_mode=low_vram_mode,
-                use_safetensors=True,
+                use_safetensors=False,
             )
             if low_vram_mode:
                 self.pipeline_tex.enable_model_cpu_offload(device=self.texture_device)

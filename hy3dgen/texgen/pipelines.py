@@ -44,7 +44,7 @@ class Hunyuan3DTexGenConfig:
         subfolder_name,
         device: str = "cuda:0",
         quality: Optional[TextureQualityConfig] = None,
-        use_safetensors: bool = True,
+        use_safetensors: bool = False,
     ):
         quality = quality or get_texture_quality_config()
 
@@ -87,7 +87,7 @@ class Hunyuan3DPaintPipeline:
         texture_size: Optional[int] = None,
         render_size: Optional[int] = None,
         low_vram_mode: bool = False,
-        use_safetensors: bool = True,
+        use_safetensors: bool = False,
     ):
         original_model_path = model_path
         quality = get_texture_quality_config(
@@ -109,11 +109,21 @@ class Hunyuan3DPaintPipeline:
                 try:
                     import huggingface_hub
                     # download from huggingface
+                    allow_patterns = [
+                        "hunyuan3d-delight-v2-0/*.bin",
+                        "hunyuan3d-delight-v2-0/*.safetensors",
+                        "hunyuan3d-delight-v2-0/*.json",
+                        "hunyuan3d-delight-v2-0/*.txt",
+                        f"{subfolder}/*.bin",
+                        f"{subfolder}/*.safetensors",
+                        f"{subfolder}/*.json",
+                        f"{subfolder}/*.txt",
+                    ]
                     model_path = huggingface_hub.snapshot_download(
-                        repo_id=original_model_path, allow_patterns=["hunyuan3d-delight-v2-0/*"]
-                    )
-                    model_path = huggingface_hub.snapshot_download(
-                        repo_id=original_model_path, allow_patterns=[f'{subfolder}/*']
+                        repo_id=original_model_path,
+                        allow_patterns=allow_patterns,
+                        local_dir=model_path,
+                        local_dir_use_symlinks=False,
                     )
                     delight_model_path = os.path.join(model_path, 'hunyuan3d-delight-v2-0')
                     multiview_model_path = os.path.join(model_path, subfolder)
