@@ -110,14 +110,10 @@ class Hunyuan3DPaintPipeline:
                     import huggingface_hub
                     # download from huggingface
                     allow_patterns = [
-                        "hunyuan3d-delight-v2-0/*.bin",
-                        "hunyuan3d-delight-v2-0/*.safetensors",
-                        "hunyuan3d-delight-v2-0/*.json",
-                        "hunyuan3d-delight-v2-0/*.txt",
-                        f"{subfolder}/*.bin",
-                        f"{subfolder}/*.safetensors",
-                        f"{subfolder}/*.json",
-                        f"{subfolder}/*.txt",
+                        "hunyuan3d-delight-v2-0/*",
+                        "hunyuan3d-delight-v2-0/**",
+                        f"{subfolder}/*",
+                        f"{subfolder}/**",
                     ]
                     model_path = huggingface_hub.snapshot_download(
                         repo_id=original_model_path,
