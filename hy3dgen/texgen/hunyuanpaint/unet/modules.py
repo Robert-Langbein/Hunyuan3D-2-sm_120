@@ -44,13 +44,39 @@ def _chunked_feed_forward(ff: nn.Module, hidden_states: torch.Tensor, chunk_dim:
 
 
 class Basic2p5DTransformerBlock(torch.nn.Module):
-    def __init__(self, transformer: BasicTransformerBlock,layer_name,use_ma=True,use_ra=True,is_turbo=False) -> None:
+    def __init__(self, transformer: BasicTransformerBlock, layer_name, use_ma=True, use_ra=True, is_turbo=False) -> None:
         super().__init__()
         self.transformer = transformer
         self.layer_name = layer_name
         self.use_ma = use_ma
         self.use_ra = use_ra
         self.is_turbo = is_turbo
+
+        # Eigenschaften robust aus dem Basis-Transformer ableiten, da sich
+        # Diffusers-BasicTransformerBlock je nach Version unterscheidet.
+        # Fallbacks basieren auf CrossAttention-Attributen.
+        self.attn1 = getattr(self.transformer, "attn1")
+        self.num_attention_heads = getattr(self.transformer, "num_attention_heads", getattr(self.attn1, "heads", 8))
+
+        if hasattr(self.attn1, "head_dim"):
+            self.attention_head_dim = self.attn1.head_dim
+        else:
+            # head_dim aus den Projektionsgewichten ableiten
+            q_proj = getattr(self.attn1, "to_q", None)
+            if q_proj is not None and hasattr(q_proj, "out_features"):
+                self.attention_head_dim = q_proj.out_features // self.num_attention_heads
+            else:
+                self.attention_head_dim = 64
+
+        # Gesamt-Dimension aus Eingangsprojektion ableiten
+        q_proj = getattr(self.attn1, "to_q", None)
+        if q_proj is not None and hasattr(q_proj, "in_features"):
+            self.dim = q_proj.in_features
+        else:
+            self.dim = self.attention_head_dim * self.num_attention_heads
+
+        self.dropout = getattr(self.transformer, "dropout", 0.0)
+        self.attention_bias = getattr(self.transformer, "attention_bias", False)
 
         # multiview attn
         if self.use_ma:
